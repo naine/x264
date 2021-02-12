@@ -1868,11 +1868,24 @@ static int encode_frame( x264_t *h, hnd_t hout, x264_picture_t *pic, int64_t *la
 
 static int64_t print_status( int64_t i_start, int64_t i_previous, int i_frame, int i_frame_total, int64_t i_file, x264_param_t *param, int64_t last_ts )
 {
+    static int print_progress_header = 1;
     char buf[200];
     int64_t i_time = x264_mdate();
     if( i_previous && i_time - i_previous < UPDATE_INTERVAL )
         return i_previous;
+
+    if( print_progress_header )
+    {
+        if( i_frame_total )
+            fprintf( stderr, " %6s  %13s %5s %8s %9s %9s %7s    %7s\n",
+                     "", "frames   ", "fps ", "kb/s ", "elapsed", "remain ", "size", "est.size" );
+        else
+            fprintf( stderr, "%6s  %5s  %8s  %9s  %7s\n", "frames", "fps ", "kb/s ", "elapsed", "size" );
+        print_progress_header = 0;
+    }
+
     int64_t i_elapsed = i_time - i_start;
+    int secs = i_elapsed / 1000000;
     double fps = i_elapsed > 0 ? i_frame * 1000000. / i_elapsed : 0;
     double bitrate;
     if( last_ts )
@@ -1882,12 +1895,17 @@ static int64_t print_status( int64_t i_start, int64_t i_previous, int i_frame, i
     if( i_frame_total )
     {
         int eta = i_elapsed * (i_frame_total - i_frame) / ((int64_t)i_frame * 1000000);
-        sprintf( buf, "x264 [%.1f%%] %d/%d frames, %.2f fps, %.2f kb/s, eta %d:%02d:%02d",
+        double estsz = (double) i_file * i_frame_total / (i_frame * 1024.);
+        sprintf( buf, "x264 [%5.1f%%] %6d/%-6d %5.2f %8.2f %3d:%02d:%02d %3d:%02d:%02d %7.2f %1sB %7.2f %1sB",
                  100. * i_frame / i_frame_total, i_frame, i_frame_total, fps, bitrate,
-                 eta/3600, (eta/60)%60, eta%60 );
+                 secs/3600, (secs/60)%60, secs%60, eta/3600, (eta/60)%60, eta%60,
+                 i_file < 1048576 ? (double) i_file / 1024. : (double) i_file / 1048576., i_file < 1048576 ? "K":"M",
+                 estsz < 1024 ? estsz : estsz / 1024, estsz < 1024 ? "K" : "M" );
     }
     else
-        sprintf( buf, "x264 %d frames: %.2f fps, %.2f kb/s", i_frame, fps, bitrate );
+        sprintf( buf, "x264 %6d  %5.2f  %8.2f  %3d:%02d:%02d  %7.2f %sB",
+                 i_frame, fps, bitrate, secs/3600, (secs/60)%60, secs%60,
+                 i_file < 1048576 ? (double) i_file / 1024. : (double) i_file / 1048576., i_file < 1048576 ? "K":"M" );
     fprintf( stderr, "%s  \r", buf+5 );
     x264_cli_set_console_title( buf );
     fflush( stderr ); // needed in windows
@@ -2074,8 +2092,11 @@ fail:
 
     i_end = x264_mdate();
     /* Erase progress indicator before printing encoding stats. */
-    if( opt->b_progress )
-        fprintf( stderr, "                                                                               \r" );
+    if( opt->b_progress && i_frame_output )
+    {
+        print_status( i_start, 0, i_frame_output, param->i_frame_total, i_file, param, 2 * last_dts - prev_dts - first_dts );
+        fprintf( stderr, "\n" );
+    }
     if( h )
         x264_encoder_close( h );
     fprintf( stderr, "\n" );
@@ -2090,9 +2111,11 @@ fail:
     {
         double fps = (double)i_frame_output * (double)1000000 /
                      (double)( i_end - i_start );
+        int secs = (i_end - i_start) / 1000000;
 
-        fprintf( stderr, "encoded %d frames, %.2f fps, %.2f kb/s\n", i_frame_output, fps,
-                 (double) i_file * 8 / ( 1000 * duration ) );
+        fprintf( stderr, "encoded %d frames, %.2f fps, %.2f kb/s, duration %d:%02d:%02d.%02d\n", i_frame_output, fps,
+                 (double) i_file * 8 / ( 1000 * duration ),
+                 secs/3600, (secs/60)%60, secs%60, (int)((i_end - i_start)%1000000/10000) );
     }
 
     return retval;
