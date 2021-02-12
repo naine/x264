@@ -13,10 +13,7 @@ if [ -d .git ] && command -v git >/dev/null 2>&1 ; then
         ver="$((localver-ver_diff))"
         echo "#define X264_REV $ver"
         echo "#define X264_REV_DIFF $ver_diff"
-        if [ "$ver_diff" -ne 0 ] ; then
-            ver="$ver+$ver_diff"
-        fi
-        if git status | grep -q "modified:" ; then
+        if [ "$ver_diff" -ne 0 ] || git status | grep -q "modified:" ; then
             ver="${ver}nMod"
         fi
         ver="$ver $(git rev-list -n 1 HEAD | cut -c 1-7)"
