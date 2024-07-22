@@ -1868,25 +1868,52 @@ static int encode_frame( x264_t *h, hnd_t hout, x264_picture_t *pic, int64_t *la
     return i_frame_size;
 }
 
-static int64_t print_status( int64_t i_start, int64_t i_previous, int i_frame, int i_frame_total, int64_t i_file, x264_param_t *param, int64_t last_ts )
+static int64_t print_status( int64_t i_start, int64_t i_previous, int i_frame, int i_frame_total, int64_t i_file,
+                             x264_param_t *param, int64_t last_ts, int64_t *frame_times, int num_times )
 {
     char buf[200];
     int64_t i_time = x264_mdate();
+    if( frame_times )
+        frame_times[i_frame % num_times] = i_time;
     if( i_previous && i_time - i_previous < UPDATE_INTERVAL )
         return i_previous;
 
     if( i_frame == 1 )
     {
         if( i_frame_total )
-            fprintf( stderr, " %6s  %13s %5s %8s %9s %9s %7s    %7s\n",
-                     "", "frames   ", "fps ", "kb/s ", "elapsed", "remain ", "size", "est.size" );
+            fprintf( stderr, " %6s  %13s %6s %6s %8s %9s %9s %7s    %7s\n",
+                     "", "frames   ", "fps ", "avgfps", "kb/s ", "elapsed", "remain ", "size", "est.size" );
         else
-            fprintf( stderr, "%6s  %5s  %8s  %9s  %7s\n", "frames", "fps ", "kb/s ", "elapsed", "size" );
+            fprintf( stderr, "%6s %6s %6s %8s %9s %7s\n", "frames", "fps ", "avgfps", "kb/s ", "elapsed", "size" );
     }
 
+#define FPS_WINDOW_MIN_FRAMES 5
+#define FPS_WINDOW_US 60000000
     int64_t i_elapsed = i_time - i_start;
     int secs = i_elapsed / 1000000;
     double fps = i_elapsed > 0 ? i_frame * 1000000. / i_elapsed : 0;
+    double fps_curr = fps;
+    if( frame_times && i_frame > 1 )
+    {
+        int oldest = i_frame >= num_times ? i_frame + 1 - num_times : 1;
+        int64_t window_elapsed = i_time - frame_times[oldest % num_times];
+        if( window_elapsed <= FPS_WINDOW_US || i_frame <= FPS_WINDOW_MIN_FRAMES )
+        {
+            fps_curr = (i_frame - oldest) * 1000000. / window_elapsed;
+        }
+        else
+        {
+            for( int i = i_frame - FPS_WINDOW_MIN_FRAMES; i >= oldest; i-- )
+            {
+                window_elapsed = i_time - frame_times[i % num_times];
+                if( window_elapsed >= FPS_WINDOW_US )
+                {
+                    fps_curr = (i_frame - i) * 1000000. / window_elapsed;
+                    break;
+                }
+            }
+        }
+    }
     double bitrate;
     if( last_ts )
         bitrate = (double) i_file * 8 / ( (double) last_ts * 1000 * param->i_timebase_num / param->i_timebase_den );
@@ -1894,17 +1921,17 @@ static int64_t print_status( int64_t i_start, int64_t i_previous, int i_frame, i
         bitrate = (double) i_file * 8 / ( (double) 1000 * i_frame * param->i_fps_den / param->i_fps_num );
     if( i_frame_total )
     {
-        int eta = i_elapsed * (i_frame_total - i_frame) / ((int64_t)i_frame * 1000000);
+        int eta = i_elapsed > 0 ? (int)((i_frame_total - i_frame) / fps_curr) : 0;
         double estsz = (double) i_file * i_frame_total / (i_frame * 1024.);
-        sprintf( buf, "x264 [%5.1f%%] %6d/%-6d %5.2f %8.2f %3d:%02d:%02d %3d:%02d:%02d %7.2f %sB %7.2f %sB",
-                 100. * i_frame / i_frame_total, i_frame, i_frame_total, fps, bitrate,
+        sprintf( buf, "x264 [%5.1f%%] %6d/%-6d %6.2f %6.2f %8.2f %3d:%02d:%02d %3d:%02d:%02d %7.2f %sB %7.2f %sB",
+                 100. * i_frame / i_frame_total, i_frame, i_frame_total, fps_curr, fps, bitrate,
                  secs/3600, (secs/60)%60, secs%60, eta/3600, (eta/60)%60, eta%60,
                  i_file < 1048576 ? (double) i_file / 1024. : (double) i_file / 1048576., i_file < 1048576 ? "K":"M",
                  estsz < 1024 ? estsz : estsz / 1024, estsz < 1024 ? "K" : "M" );
     }
     else
-        sprintf( buf, "x264 %6d  %5.2f  %8.2f  %3d:%02d:%02d  %7.2f %sB",
-                 i_frame, fps, bitrate, secs/3600, (secs/60)%60, secs%60,
+        sprintf( buf, "x264 %6d %6.2f %6.2f %8.2f %3d:%02d:%02d %7.2f %sB",
+                 i_frame, fps_curr, fps, bitrate, secs/3600, (secs/60)%60, secs%60,
                  i_file < 1048576 ? (double) i_file / 1024. : (double) i_file / 1048576., i_file < 1048576 ? "K":"M" );
     fprintf( stderr, "%s  \r", buf+5 );
     x264_cli_set_console_title( buf );
@@ -1938,6 +1965,8 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
     x264_picture_t pic;
     cli_pic_t cli_pic;
     const cli_pulldown_t *pulldown = NULL; // shut up gcc
+#   define NUM_FRAME_TIMES 512
+    int64_t *frame_times = NULL;
 
     int     i_frame = 0;
     int     i_frame_output = 0;
@@ -1998,6 +2027,7 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
         fprintf( opt->tcfile_out, "# timecode format v2\n" );
 
     /* Encode frames */
+    frame_times = calloc( NUM_FRAME_TIMES, sizeof(int64_t) );
     for( ; !b_ctrl_c && (i_frame < param->i_frame_total || !param->i_frame_total); i_frame++ )
     {
         if( filter.get_frame( opt->hin, &cli_pic, i_frame + opt->i_seek ) )
@@ -2056,7 +2086,8 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
 
         /* update status line (up to 1000 times per input file) */
         if( opt->b_progress && i_frame_output )
-            i_previous = print_status( i_start, i_previous, i_frame_output, param->i_frame_total, i_file, param, 2 * last_dts - prev_dts - first_dts );
+            i_previous = print_status( i_start, i_previous, i_frame_output, param->i_frame_total, i_file,
+                                       param, 2 * last_dts - prev_dts - first_dts, frame_times, NUM_FRAME_TIMES );
     }
     /* Flush delayed frames */
     while( !b_ctrl_c && x264_encoder_delayed_frames( h ) )
@@ -2076,7 +2107,8 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
                 first_dts = prev_dts = last_dts;
         }
         if( opt->b_progress && i_frame_output )
-            i_previous = print_status( i_start, i_previous, i_frame_output, param->i_frame_total, i_file, param, 2 * last_dts - prev_dts - first_dts );
+            i_previous = print_status( i_start, i_previous, i_frame_output, param->i_frame_total, i_file,
+                                       param, 2 * last_dts - prev_dts - first_dts, frame_times, NUM_FRAME_TIMES );
     }
 fail:
     if( pts_warning_cnt >= MAX_PTS_WARNING && cli_log_level < X264_LOG_DEBUG )
@@ -2094,9 +2126,12 @@ fail:
     /* Update progress indicator before printing encoding stats. */
     if( opt->b_progress && i_frame_output )
     {
-        print_status( i_start, 0, i_frame_output, param->i_frame_total, i_file, param, 2 * last_dts - prev_dts - first_dts );
+        print_status( i_start, 0, i_frame_output, param->i_frame_total, i_file,
+                      param, 2 * last_dts - prev_dts - first_dts, frame_times, NUM_FRAME_TIMES );
         fprintf( stderr, "\n" );
     }
+    if( frame_times )
+        free( frame_times );
     if( h )
         x264_encoder_close( h );
     fprintf( stderr, "\n" );
