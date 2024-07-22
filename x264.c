@@ -2093,7 +2093,7 @@ fail:
         duration = (double)(2 * largest_pts - second_largest_pts) * param->i_timebase_num / param->i_timebase_den;
 
     i_end = x264_mdate();
-    /* Erase progress indicator before printing encoding stats. */
+    /* Update progress indicator before printing encoding stats. */
     if( opt->b_progress && i_frame_output )
     {
         print_status( i_start, 0, i_frame_output, param->i_frame_total, i_file, param, 2 * last_dts - prev_dts - first_dts );
