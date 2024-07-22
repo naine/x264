@@ -43,9 +43,16 @@ extern int ptw32_processInitialized;
 int64_t x264_mdate( void )
 {
 #if SYS_WINDOWS
-    struct timeb tb;
-    ftime( &tb );
-    return ((int64_t)tb.time * 1000 + (int64_t)tb.millitm) * 1000;
+    static LONGLONG freq_us = 0;
+    LARGE_INTEGER result;
+    if( !freq_us )
+    {
+        QueryPerformanceFrequency( &result );
+        /* Resolution documented to be at least a microsecond. */
+        freq_us = result.QuadPart / 1000000;
+    }
+    QueryPerformanceCounter( &result );
+    return result.QuadPart / freq_us;
 #elif HAVE_CLOCK_GETTIME
     struct timespec ts;
     clock_gettime( CLOCK_MONOTONIC, &ts );
