@@ -2111,13 +2111,13 @@ fail:
 
     if( i_frame_output > 0 )
     {
-        double fps = (double)i_frame_output * (double)1000000 /
-                     (double)( i_end - i_start );
-        int secs = (i_end - i_start) / 1000000;
+        int64_t elapsed_us = i_end - i_start;
+        double fps = (double)i_frame_output * (double)1000000 / (double)elapsed_us;
+        int secs = elapsed_us / 1000000;
 
         fprintf( stderr, "encoded %d frames, %.2f fps, %.2f kb/s, duration %d:%02d:%02d.%02d\n", i_frame_output, fps,
                  (double) i_file * 8 / ( 1000 * duration ),
-                 secs/3600, (secs/60)%60, secs%60, (int)((i_end - i_start)%1000000/10000) );
+                 secs/3600, (secs/60)%60, secs%60, (int)((elapsed_us % 1000000) / 10000) );
     }
 
     return retval;
