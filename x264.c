@@ -1891,7 +1891,7 @@ static int64_t print_status( int64_t i_start, int64_t i_previous, int i_frame, i
     if( last_ts )
         bitrate = (double) i_file * 8 / ( (double) last_ts * 1000 * param->i_timebase_num / param->i_timebase_den );
     else
-        bitrate = (double) i_file * 8 / ( (double) 1000 * param->i_fps_den / param->i_fps_num );
+        bitrate = (double) i_file * 8 / ( (double) 1000 * i_frame * param->i_fps_den / param->i_fps_num );
     if( i_frame_total )
     {
         int eta = i_elapsed * (i_frame_total - i_frame) / ((int64_t)i_frame * 1000000);
