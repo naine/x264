@@ -1869,7 +1869,7 @@ static int encode_frame( x264_t *h, hnd_t hout, x264_picture_t *pic, int64_t *la
 }
 
 static int64_t print_status( int64_t i_start, int64_t i_previous, int i_frame, int i_frame_total, int64_t i_file,
-                             x264_param_t *param, int64_t last_ts, int64_t *frame_times, int num_times )
+                             x264_param_t *param, int64_t last_ts, int64_t *frame_times, int num_times, int print_header )
 {
     char buf[200];
     int64_t i_time = x264_mdate();
@@ -1878,7 +1878,7 @@ static int64_t print_status( int64_t i_start, int64_t i_previous, int i_frame, i
     if( i_previous && i_time - i_previous < UPDATE_INTERVAL )
         return i_previous;
 
-    if( i_frame == 1 )
+    if( print_header )
     {
         if( i_frame_total )
             fprintf( stderr, " %6s  %13s %6s %6s %8s %9s %9s %7s    %7s\n",
@@ -2086,8 +2086,8 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
 
         /* update status line (up to 1000 times per input file) */
         if( opt->b_progress && i_frame_output )
-            i_previous = print_status( i_start, i_previous, i_frame_output, param->i_frame_total, i_file,
-                                       param, 2 * last_dts - prev_dts - first_dts, frame_times, NUM_FRAME_TIMES );
+            i_previous = print_status( i_start, i_previous, i_frame_output, param->i_frame_total, i_file, param,
+                                       2 * last_dts - prev_dts - first_dts, frame_times, NUM_FRAME_TIMES, !i_previous );
     }
     /* Flush delayed frames */
     while( !b_ctrl_c && x264_encoder_delayed_frames( h ) )
@@ -2107,8 +2107,8 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
                 first_dts = prev_dts = last_dts;
         }
         if( opt->b_progress && i_frame_output )
-            i_previous = print_status( i_start, i_previous, i_frame_output, param->i_frame_total, i_file,
-                                       param, 2 * last_dts - prev_dts - first_dts, frame_times, NUM_FRAME_TIMES );
+            i_previous = print_status( i_start, i_previous, i_frame_output, param->i_frame_total, i_file, param,
+                                       2 * last_dts - prev_dts - first_dts, frame_times, NUM_FRAME_TIMES, !i_previous );
     }
 fail:
     if( pts_warning_cnt >= MAX_PTS_WARNING && cli_log_level < X264_LOG_DEBUG )
@@ -2126,8 +2126,8 @@ fail:
     /* Update progress indicator before printing encoding stats. */
     if( opt->b_progress && i_frame_output )
     {
-        print_status( i_start, 0, i_frame_output, param->i_frame_total, i_file,
-                      param, 2 * last_dts - prev_dts - first_dts, frame_times, NUM_FRAME_TIMES );
+        print_status( i_start, 0, i_frame_output, param->i_frame_total, i_file, param,
+                      2 * last_dts - prev_dts - first_dts, frame_times, NUM_FRAME_TIMES, !i_previous );
         fprintf( stderr, "\n" );
     }
     if( frame_times )
