@@ -1899,7 +1899,7 @@ static int64_t print_status( int64_t i_start, int64_t i_previous, int i_frame, i
         int64_t window_elapsed = i_time - frame_times[oldest % num_times];
         if( window_elapsed <= FPS_WINDOW_US || i_frame <= FPS_WINDOW_MIN_FRAMES )
         {
-            fps_curr = (i_frame - oldest) * 1000000. / window_elapsed;
+            fps_curr = window_elapsed > 0 ? (i_frame - oldest) * 1000000. / window_elapsed : 0;
         }
         else
         {
